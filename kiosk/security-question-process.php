@@ -75,18 +75,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ->execute([$selector, $hashed_validator, $user['id'], $expires]);
             }
 
-            // 5. Clean up pending variables
-            unset($_SESSION['pending_user_id']);
-            unset($_SESSION['pending_user_name']);
-            unset($_SESSION['pending_user_role']);
-            unset($_SESSION['pending_remember_me']);
+          // 5. Clean up pending variables
+unset($_SESSION['pending_user_id']);
+unset($_SESSION['pending_user_name']);
+unset($_SESSION['pending_user_role']);
+unset($_SESSION['pending_remember_me']);
 
-            // 6. Redirect to dashboard
-            if ($user['role'] === 'vendor' || $user['role'] === 'admin') {
-                header("Location: Red/admin_dashboard.php");
-            } else {
-                header("Location: my-account.php");
-            }
+// FIX #15: Recalculate cart count on login so badge is accurate
+try {
+    $cart_stmt = $pdo->prepare("SELECT SUM(quantity) FROM cart WHERE user_id = ?");
+    $cart_stmt->execute([$user['id']]);
+    $_SESSION['cart_count'] = $cart_stmt->fetchColumn() ?: 0;
+} catch (Exception $e) {
+    $_SESSION['cart_count'] = 0;
+}
+
+// 6. Redirect to dashboard
+if ($user['role'] === 'vendor' || $user['role'] === 'admin') {
+    header("Location: Red/admin_dashboard.php");
+} else {
+    header("Location: my-account.php");
+}
             // CRUCIAL: Exit immediately after sending the header to prevent any further script execution
             exit; 
 

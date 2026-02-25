@@ -454,8 +454,7 @@ function getPaymentMethodDisplay($method) {
                 </div>
 
                 <div class="order-actions">
-                    <a href="order_details.php?id=<?= $order['id'] ?>" class="btn btn-secondary">View Details</a>
-                    
+                <a href="order-detail.php?id=<?= $order['id'] ?>" class="btn btn-secondary">View Details</a>                    
                     <?php if ($order['status'] === 'pending'): ?>
                         <a href="confirm_payment.php?order_id=<?= $order['id'] ?>" class="btn btn-primary">Confirm Payment</a>
                         <form method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to cancel this order?')">
