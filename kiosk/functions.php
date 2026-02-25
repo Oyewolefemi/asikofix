@@ -45,24 +45,15 @@ if (!function_exists('getApplicablePrice')) {
     }
 }
 
-// --- NEW LUHN ALGORITHM FUNCTION ---
 if (!function_exists('generateLuhnOrderNumber')) {
-    /**
-     * Generates a random order number that satisfies the Luhn algorithm.
-     * @param int $length Total length of the order number (default 8).
-     * @return string The generated order number.
-     */
     function generateLuhnOrderNumber($length = 8) {
-        // 1. Generate N-1 random digits
         $body = '';
         for ($i = 0; $i < $length - 1; $i++) {
             $body .= mt_rand(0, 9);
         }
 
-        // 2. Calculate Luhn Check Digit
         $sum = 0;
         $alt = true;
-        // Process digits from right to left
         for ($i = strlen($body) - 1; $i >= 0; $i--) {
             $n = intval($body[$i]);
             if ($alt) {
@@ -70,11 +61,10 @@ if (!function_exists('generateLuhnOrderNumber')) {
                 if ($n > 9) $n -= 9;
             }
             $sum += $n;
-            $alt = !$alt; // Toggle flag
+            $alt = !$alt; 
         }
 
         $checkDigit = (10 - ($sum % 10)) % 10;
-        
         return $body . $checkDigit;
     }
 }
@@ -82,9 +72,19 @@ if (!function_exists('generateLuhnOrderNumber')) {
 if (!function_exists('getProductImage')) {
     function getProductImage($imagePath) {
         if (empty($imagePath)) return 'https://placehold.co/100x100/f8f9fa/ccc?text=No+Image';
+        
         $fixedPath = str_replace('/kios/', '/kiosk/', $imagePath);
-        if (strpos($fixedPath, '/') !== 0) $fixedPath = '/kiosk/Red/uploads/' . $fixedPath;
-        return $fixedPath; 
+        
+        // Fix for Bug 7: Ensure we do not double-prefix the path.
+        if (strpos($fixedPath, 'kiosk/') === 0) {
+            return '/' . $fixedPath; 
+        } elseif (strpos($fixedPath, '/kiosk/') === 0) {
+            return $fixedPath;
+        }
+        
+        // Otherwise prepend standard path
+        $fixedPath = ltrim($fixedPath, '/');
+        return '/kiosk/Red/uploads/' . $fixedPath; 
     }
 }
 
@@ -107,6 +107,7 @@ if (!function_exists('generateCsrfToken')) {
 if (!function_exists('verifyCsrfToken')) {
     function verifyCsrfToken($token) {
         if (isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token)) {
+            // Only unset upon successful match to prevent lockout
             unset($_SESSION['csrf_token']); 
             return true;
         }
@@ -125,9 +126,6 @@ if (!function_exists('logActivity')) {
     }
 }
 
-/**
- * NEW: Darkens a hex color by a given percentage.
- */
 if (!function_exists('darken_color')) {
     function darken_color($hex, $percent) {
         $hex = str_replace('#', '', $hex);

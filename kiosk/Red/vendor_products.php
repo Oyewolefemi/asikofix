@@ -2,8 +2,6 @@
 // dns/kiosk/Red/vendor_products.php
 include 'header.php';
 
-// Fetch products NOT owned by current admin
-// We also JOIN with the admins table to show WHICH store owns the product
 $sql = "SELECT p.*, a.store_name, a.username 
         FROM products p 
         LEFT JOIN admins a ON p.admin_id = a.id 
@@ -44,8 +42,7 @@ $others_products = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <?php endif; ?>
                             <div>
                                 <div class="font-bold text-gray-800"><?= htmlspecialchars($p['name']) ?></div>
-                                <div class="text-xs text-gray-500">SKU: <?= htmlspecialchars($p['sku']) ?></div>
-                            </div>
+                                </div>
                         </div>
                     </td>
                     <td class="p-4">

@@ -1,20 +1,19 @@
 <?php
+// kiosk/cart.php
 include 'header.php'; 
 include 'config.php';
 include 'functions.php';
 
 $user_id = $_SESSION['user_id'] ?? 0;
 if (!$user_id) {
-    // --- FIX: Use ob_clean() to clear any buffered output just before redirect ---
     ob_clean(); 
     header("Location: auth.php");
     exit;
 }
 
-// FIX: Use relative path for cart.css
 echo '<link rel="stylesheet" href="assets/css/cart.css?v=' . time() . '">';
 
-// Retrieve cart items (join with products)
+// Retrieve cart items
 try {
     $stmt = $pdo->prepare("
         SELECT 
@@ -35,23 +34,16 @@ try {
     $stmt->execute([$user_id]);
     $cartItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Fetch bulk discounts (Logic remains the same)
     $product_ids = array_column($cartItems, 'product_id');
     $bulk_discounts = [];
     if (!empty($product_ids)) {
-        // Create placeholders based on the count of product IDs
         $in_query = implode(',', array_fill(0, count($product_ids), '?'));
-        
-        // Prepare the statement with the dynamic placeholders
         $stmt_discounts = $pdo->prepare("
             SELECT * FROM product_bulk_discounts 
             WHERE product_id IN ($in_query) 
             ORDER BY product_id, min_quantity DESC
         ");
-        
-        // Execute with the array of product IDs
         $stmt_discounts->execute($product_ids);
-        
         while ($row = $stmt_discounts->fetch()) {
             $bulk_discounts[$row['product_id']][] = $row;
         }
@@ -62,7 +54,6 @@ try {
     $cartItems = [];
 }
 
-// Calculate total cost (Logic remains the same)
 $total = 0;
 $total_savings = 0;
 foreach ($cartItems as $item) {
@@ -84,7 +75,6 @@ foreach ($cartItems as $item) {
                 <?php foreach ($cartItems as $item): ?>
                     <?php 
                         $imagePath = getProductImage($item['image_path']); 
-                        // FIX: Ensure null is not passed to json_decode
                         $options = json_decode($item['selected_options'] ?? '', true);
                         
                         $effective_price = getApplicablePrice($item, $bulk_discounts);
@@ -116,7 +106,7 @@ foreach ($cartItems as $item) {
                             <div class="item-quantity-price-block">
                                 <div class="cart-item-actions">
                                     <button data-action="decrease" class="decrease-btn quantity-btn">-</button>
-                                    <input type="number" value="<?= $item['quantity']; ?>" class="quantity-input" data-min="<?= $item['min_order_quantity'] ?>" readonly>
+                                    <input type="number" value="<?= $item['quantity']; ?>" class="quantity-input" data-min="<?= max(1, $item['min_order_quantity']) ?>" readonly>
                                     <button data-action="increase" class="increase-btn quantity-btn">+</button>
                                 </div>
                                 <div class="price-remove-block">
@@ -128,7 +118,7 @@ foreach ($cartItems as $item) {
                                             ₦<?= number_format($original_line_total, 2) ?>
                                         </p>
                                     <?php endif; ?>
-                                    <button data-action="remove" class="remove-btn">Delete</button>
+                                    <button data-action="remove" class="remove-btn text-red-600 hover:text-red-800 font-bold ml-4">Delete</button>
                                 </div>
                             </div>
                         </div>
@@ -136,20 +126,20 @@ foreach ($cartItems as $item) {
                 <?php endforeach; ?>
             </div>
 
-            <div class="cart-summary">
+            <div class="cart-summary bg-gray-50 p-6 rounded-lg mt-6 text-right">
                 <?php if ($total_savings > 0): ?>
-                    <p class="text-lg font-semibold text-green-600">Total Savings: ₦<?= number_format($total_savings, 2); ?></p>
+                    <p class="text-lg font-semibold text-green-600 mb-2">Total Savings: ₦<?= number_format($total_savings, 2); ?></p>
                 <?php endif; ?>
-                <p class="text-2xl font-bold">Subtotal (<?= count($cartItems) ?> item<?= count($cartItems) == 1 ? '' : 's' ?>): ₦<?= number_format($total, 2); ?></p>
-                <a href="checkout.php" class="btn btn-primary mt-4">
+                <p class="text-2xl font-bold mb-4">Subtotal (<?= count($cartItems) ?> item<?= count($cartItems) == 1 ? '' : 's' ?>): ₦<?= number_format($total, 2); ?></p>
+                <a href="checkout.php" class="btn btn-primary inline-block bg-blue-600 text-white font-bold py-3 px-8 rounded hover:bg-blue-700 transition">
                     Proceed to Checkout
                 </a>
             </div>
 
         <?php else: ?>
-            <div class="empty-state">
-                <h3>Your cart is empty.</h3>
-                <a href="products.php" class="btn btn-primary mt-4">
+            <div class="empty-state text-center py-12">
+                <h3 class="text-2xl text-gray-600 mb-6">Your cart is empty.</h3>
+                <a href="products.php" class="btn btn-primary inline-block bg-blue-600 text-white font-bold py-3 px-8 rounded hover:bg-blue-700 transition">
                     Continue Shopping
                 </a>
             </div>
@@ -157,14 +147,60 @@ foreach ($cartItems as $item) {
     </div>
 </main>
 
-<div id="confirmation-modal" class="modal-overlay"></div>
-
 <script>
     document.addEventListener('DOMContentLoaded', () => {
-        // ... [JavaScript remains the same] ...
+        const updateCart = async (action, cartId, quantity = null) => {
+            const formData = new FormData();
+            formData.append('action', action);
+            formData.append('cart_id', cartId);
+            if (quantity !== null) formData.append('quantity', quantity);
+            
+            try {
+                const response = await fetch('ajax_cart.php', { method: 'POST', body: formData });
+                if (response.ok) window.location.reload();
+            } catch (error) {
+                console.error('Failed to update cart', error);
+                alert("Failed to update cart. Please try again.");
+            }
+        };
+
+        document.querySelectorAll('.increase-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const item = e.target.closest('.cart-item');
+                const input = item.querySelector('.quantity-input');
+                const stock = parseInt(item.dataset.stock);
+                let val = parseInt(input.value);
+                if (val < stock) {
+                    input.value = val + 1;
+                    updateCart('update_quantity', item.dataset.cartId, input.value);
+                } else {
+                    alert("Maximum stock reached for this item.");
+                }
+            });
+        });
+
+        document.querySelectorAll('.decrease-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const item = e.target.closest('.cart-item');
+                const input = item.querySelector('.quantity-input');
+                const min = parseInt(input.dataset.min || 1);
+                let val = parseInt(input.value);
+                if (val > min) {
+                    input.value = val - 1;
+                    updateCart('update_quantity', item.dataset.cartId, input.value);
+                }
+            });
+        });
+
+        document.querySelectorAll('.remove-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                if (confirm("Are you sure you want to remove this item?")) {
+                    const item = e.target.closest('.cart-item');
+                    updateCart('remove', item.dataset.cartId);
+                }
+            });
+        });
     });
 </script>
 
-<?php 
-include 'footer.php';
-?>
+<?php include 'footer.php'; ?>

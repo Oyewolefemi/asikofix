@@ -75,9 +75,6 @@ foreach ($cartItems as $item) {
     $total_savings += ($original_price - $effective_unit_price) * $item['quantity'];
 }
 
-$delivery_fee = 0; // Calculated later or fixed
-$grandTotal = $subtotal + $delivery_fee;
-
 // Fetch saved addresses...
 $stmt = $pdo->prepare("SELECT id, full_name, address_line1, city, state FROM addresses WHERE user_id = ? ORDER BY created_at DESC");
 $stmt->execute([$user_id]);
@@ -99,26 +96,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'check
     if (!$paymentConfigured) $errors[] = "Payment system is currently under maintenance.";
     if (empty($_POST['address_option'])) $errors[] = "Please select a delivery address.";
     
-    // Address Logic
+    // Address Logic & Delivery Fee Inclusion
     $address_id = 0;
     $shipping_address_text = '';
+    $destination_city = '';
 
     if (empty($errors)) {
+        require_once 'get_delivery_fee.php'; // Include delivery fee calculator
+
         if ($_POST['address_option'] === 'new') {
             if (empty(trim($_POST['new_address_line1'] ?? ''))) {
                 $errors[] = "Please fill in your new address details.";
             } else {
                 try {
+                    $destination_city = sanitize($_POST['new_city']); // Capture city
                     $stmtIns = $pdo->prepare("INSERT INTO addresses (user_id, full_name, address_line1, city, state, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
                     $stmtIns->execute([
                         $user_id, 
                         sanitize($_POST['new_full_name']), 
                         sanitize($_POST['new_address_line1']), 
-                        sanitize($_POST['new_city']), 
+                        $destination_city, 
                         sanitize($_POST['new_state'])
                     ]);
                     $address_id = $pdo->lastInsertId();
-                    $shipping_address_text = implode(', ', [sanitize($_POST['new_full_name']), sanitize($_POST['new_address_line1']), sanitize($_POST['new_city'])]);
+                    $shipping_address_text = implode(', ', [sanitize($_POST['new_full_name']), sanitize($_POST['new_address_line1']), $destination_city]);
                 } catch (Exception $e) { $errors[] = "Address Error: " . $e->getMessage(); }
             }
         } else {
@@ -127,11 +128,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'check
             $stmt->execute([$address_id, $user_id]);
             $addr = $stmt->fetch();
             if ($addr) {
-                $shipping_address_text = $addr['full_name'] . ', ' . $addr['address_line1'] . ', ' . $addr['city'];
+                $destination_city = $addr['city']; // Capture city
+                $shipping_address_text = $addr['full_name'] . ', ' . $addr['address_line1'] . ', ' . $destination_city;
             } else {
                 $errors[] = "Invalid address selected.";
             }
         }
+
+        // Calculate actual delivery fee based on city
+        $delivery_fee = getShippingFeeFromApi($destination_city);
     }
 
     if (empty($errors)) {
@@ -182,14 +187,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'check
                 ];
             }
             
+            // Calculate final order total (Subtotal + Dynamic Delivery Fee)
+            $final_order_total = $order_total + $delivery_fee;
+
             // --- 3. CREATE ORDER RECORD ---
-            $stmtOrder = $pdo->prepare("INSERT INTO orders (user_id, order_number, total_amount, delivery_fee, status, address_id, payment_method, delivery_option, shipping_address, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
-            // Hardcoding delivery fee to 0 for now, or fetch from logic if needed
-            $stmtOrder->execute([$user_id, $order_number, $order_total, 0, 'payment_submitted', $address_id, 'manual', 'standard', $shipping_address_text]);
+            $stmtOrder = $pdo->prepare("INSERT INTO orders (user_id, order_number, total_amount, delivery_fee, status, address_id, payment_method, delivery_option, shipping_address, created_at, order_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+            
+            // Replaced hardcoded 0 with dynamic $delivery_fee and $final_order_total
+            $stmtOrder->execute([$user_id, $order_number, $final_order_total, $delivery_fee, 'payment_submitted', $address_id, 'manual', 'standard', $shipping_address_text]);
             $order_id = $pdo->lastInsertId();
 
             // --- 4. CREATE ORDER DETAILS (WITH VENDOR ID) ---
-            // Updated SQL to include vendor_id
             $stmtDet = $pdo->prepare("INSERT INTO order_details (order_id, product_id, vendor_id, quantity, price_at_purchase, selected_options) VALUES (?, ?, ?, ?, ?, ?)");
             $stmtStock = $pdo->prepare("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?");
             
@@ -197,7 +205,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'check
                 $stmtDet->execute([
                     $order_id, 
                     $data['product_id'], 
-                    $data['vendor_id'], // Insert Vendor ID here
+                    $data['vendor_id'], 
                     $data['quantity'], 
                     $data['price'], 
                     $data['options']
@@ -246,7 +254,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'check
                         
                         <h3>Order Summary</h3>
                         $itemsHtml
-                        <p style='text-align:right; font-weight:bold; font-size:18px; margin-top:10px;'>Total: ₦" . number_format($order_total, 2) . "</p>
+                        <p style='text-align:right; font-weight:bold; font-size:18px; margin-top:10px;'>Total: ₦" . number_format($final_order_total, 2) . "</p>
                         
                         <div style='background: #f0f9ff; padding: 15px; border-radius: 5px; margin-top: 20px; border-left: 4px solid #0284c7;'>
                             <strong>Payment Instructions (Bank Transfer):</strong><br>
@@ -273,6 +281,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'check
         }
     }
 }
+
+// Initial calculation for display (before form submit)
+$grandTotal = $subtotal;
 ?>
 
 <main class="checkout-container container mx-auto py-10 px-4 md:px-8">
@@ -358,7 +369,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'check
                                 <span>Calculated Later</span>
                             </div>
                             <div class="flex justify-between text-xl font-bold text-gray-900 pt-2 border-t mt-2">
-                                <span>Total</span>
+                                <span>Total (Estimate)</span>
                                 <span>₦<?= number_format($grandTotal, 2) ?></span>
                             </div>
                         </div>

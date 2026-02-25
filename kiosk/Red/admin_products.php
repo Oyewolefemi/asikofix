@@ -11,94 +11,84 @@ $success = '';
 $error = '';
 $csrf_token = generateCsrfToken();
 
-// --- 1. HANDLE FORM SUBMISSION (Add / Edit) ---
+// --- 1. HANDLE FORM SUBMISSION (Add / Edit / Delete) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
         $error = "Session expired. Please refresh.";
     } else {
-        // Common Fields
-        $name = sanitize($_POST['name']);
-        $price = floatval($_POST['price']);
-        $stock = intval($_POST['stock_quantity']); // MATCHED DB COLUMN
-        $category = sanitize($_POST['category']);
-        $desc = sanitize($_POST['description']);
-        $min_order = intval($_POST['min_order'] ?? 1);
         
-        // Optional Bulk Fields (if they exist in your form/DB)
-        $bulk_price = !empty($_POST['bulk_price']) ? floatval($_POST['bulk_price']) : null;
+        // --- 1A. HANDLE DELETION (Fix for Bug #12) ---
+        if (isset($_POST['delete_id'])) {
+            $del_id = intval($_POST['delete_id']);
+            $checkOwner = $is_super ? "1=1" : "admin_id = $current_admin_id";
+            $stmt = $pdo->prepare("DELETE FROM products WHERE id = ? AND $checkOwner");
+            $stmt->execute([$del_id]);
+            $success = "Product deleted successfully.";
+        } 
         
-        // Image Upload Logic
-        $imagePath = null;
-        if (isset($_FILES['image']) && $_FILES['image']['error'] === 0) {
-            $allowed = ['jpg', 'jpeg', 'png', 'webp'];
-            $ext = strtolower(pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION));
-            if (in_array($ext, $allowed)) {
-                $filename = uniqid('prod_') . '.' . $ext;
-                // Ensure upload directory exists
-                if (!is_dir("../uploads")) mkdir("../uploads", 0755, true);
-                
-                if (move_uploaded_file($_FILES['image']['tmp_name'], "../uploads/$filename")) {
-                    $imagePath = "kiosk/uploads/$filename";
-                }
-            } else {
-                $error = "Invalid image format. Only JPG, PNG, WEBP allowed.";
-            }
-        }
-
-        if (!$error) {
-            // A. UPDATE PRODUCT
-            if (isset($_POST['edit_id'])) {
-                $id = intval($_POST['edit_id']);
-                
-                // Security: If not Super Admin, ensure they own this product
-                $checkOwner = $is_super ? "1=1" : "admin_id = $current_admin_id";
-                
-                // Build Query using CORRECT column names (stock_quantity, image_path)
-                $sql = "UPDATE products SET name=?, price=?, stock_quantity=?, category=?, description=?, min_order_quantity=?, sale_price=? ";
-                $params = [$name, $price, $stock, $category, $desc, $min_order, $bulk_price];
-                
-                if ($imagePath) {
-                    $sql .= ", image_path=? ";
-                    $params[] = $imagePath;
-                }
-                
-                $sql .= "WHERE id=? AND $checkOwner"; 
-                $params[] = $id;
-
-                $stmt = $pdo->prepare($sql);
-                $stmt->execute($params);
-                $success = "Product updated successfully.";
-
-            } 
-            // B. CREATE PRODUCT
-            elseif (isset($_POST['create_product'])) {
-                if (!$imagePath) {
-                    $error = "Product image is required.";
-                } else {
-                    // CORRECT COLUMN NAMES USED HERE
-                    $sql = "INSERT INTO products (name, price, stock_quantity, category, description, image_path, min_order_quantity, sale_price, admin_id, created_at) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+        // --- 1B. HANDLE CREATE / UPDATE ---
+        elseif (isset($_POST['name'])) {
+            $name = sanitize($_POST['name']);
+            $price = floatval($_POST['price']);
+            $stock = intval($_POST['stock_quantity']); 
+            $category = sanitize($_POST['category']);
+            $desc = sanitize($_POST['description']);
+            $min_order = intval($_POST['min_order'] ?? 1);
+            $bulk_price = !empty($_POST['bulk_price']) ? floatval($_POST['bulk_price']) : null;
+            
+            $imagePath = null;
+            if (isset($_FILES['image']) && $_FILES['image']['error'] === 0) {
+                $allowed = ['jpg', 'jpeg', 'png', 'webp'];
+                $ext = strtolower(pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION));
+                if (in_array($ext, $allowed)) {
+                    $filename = uniqid('prod_') . '.' . $ext;
+                    if (!is_dir("../uploads")) mkdir("../uploads", 0755, true);
                     
+                    if (move_uploaded_file($_FILES['image']['tmp_name'], "../uploads/$filename")) {
+                        $imagePath = "kiosk/uploads/$filename";
+                    }
+                } else {
+                    $error = "Invalid image format. Only JPG, PNG, WEBP allowed.";
+                }
+            }
+
+            if (!$error) {
+                if (isset($_POST['edit_id'])) {
+                    $id = intval($_POST['edit_id']);
+                    $checkOwner = $is_super ? "1=1" : "admin_id = $current_admin_id";
+                    
+                    $sql = "UPDATE products SET name=?, price=?, stock_quantity=?, category=?, description=?, min_order_quantity=?, sale_price=? ";
+                    $params = [$name, $price, $stock, $category, $desc, $min_order, $bulk_price];
+                    
+                    if ($imagePath) {
+                        $sql .= ", image_path=? ";
+                        $params[] = $imagePath;
+                    }
+                    
+                    $sql .= "WHERE id=? AND $checkOwner"; 
+                    $params[] = $id;
+
                     $stmt = $pdo->prepare($sql);
-                    $stmt->execute([$name, $price, $stock, $category, $desc, $imagePath, $min_order, $bulk_price, $current_admin_id]);
-                    $success = "Product added to your store!";
+                    $stmt->execute($params);
+                    $success = "Product updated successfully.";
+                } elseif (isset($_POST['create_product'])) {
+                    if (!$imagePath) {
+                        $error = "Product image is required.";
+                    } else {
+                        $sql = "INSERT INTO products (name, price, stock_quantity, category, description, image_path, min_order_quantity, sale_price, admin_id, created_at) 
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+                        
+                        $stmt = $pdo->prepare($sql);
+                        $stmt->execute([$name, $price, $stock, $category, $desc, $imagePath, $min_order, $bulk_price, $current_admin_id]);
+                        $success = "Product added to your store!";
+                    }
                 }
             }
         }
     }
 }
 
-// --- 2. HANDLE DELETION ---
-if (isset($_GET['delete'])) {
-    $del_id = intval($_GET['delete']);
-    $checkOwner = $is_super ? "1=1" : "admin_id = $current_admin_id";
-    $stmt = $pdo->prepare("DELETE FROM products WHERE id = ? AND $checkOwner");
-    $stmt->execute([$del_id]);
-    $success = "Product deleted successfully.";
-}
-
 // --- 3. FETCH PRODUCTS ---
-// Uses image_path and stock_quantity
 if ($is_super) {
     $stmt = $pdo->query("
         SELECT p.*, a.store_name 
@@ -170,7 +160,6 @@ $products = $stmt->fetchAll();
             </thead>
             <tbody class="divide-y divide-gray-100 text-sm">
                 <?php foreach ($products as $p): 
-                    // Handle missing image gracefully
                     $imgSrc = !empty($p['image_path']) ? '/' . htmlspecialchars($p['image_path']) : '/kiosk/uploads/default_product.png';
                 ?>
                 <tr class="hover:bg-gray-50">
@@ -183,10 +172,7 @@ $products = $stmt->fetchAll();
                     </td>
                     <td class="px-6 py-4 font-bold text-gray-700">₦<?= number_format($p['price']) ?></td>
                     <td class="px-6 py-4">
-                        <?php 
-                            // Use stock_quantity
-                            $qty = $p['stock_quantity'] ?? 0; 
-                        ?>
+                        <?php $qty = $p['stock_quantity'] ?? 0; ?>
                         <?php if($qty < 5): ?>
                             <span class="text-red-600 font-bold"><?= $qty ?> (Low)</span>
                         <?php else: ?>
@@ -197,7 +183,11 @@ $products = $stmt->fetchAll();
                         <td class="px-6 py-4 text-blue-600 font-medium"><?= htmlspecialchars($p['store_name'] ?? 'Unknown') ?></td>
                     <?php endif; ?>
                     <td class="px-6 py-4 text-right space-x-2">
-                        <a href="?delete=<?= $p['id'] ?>" onclick="return confirm('Delete this product?')" class="text-red-500 hover:underline">Delete</a>
+                        <form method="POST" class="inline" onsubmit="return confirm('Are you sure you want to delete this product?');">
+                            <input type="hidden" name="csrf_token" value="<?= $csrf_token ?>">
+                            <input type="hidden" name="delete_id" value="<?= $p['id'] ?>">
+                            <button type="submit" class="text-red-500 hover:text-red-700 hover:underline">Delete</button>
+                        </form>
                     </td>
                 </tr>
                 <?php endforeach; ?>

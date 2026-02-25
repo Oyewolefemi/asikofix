@@ -1,31 +1,33 @@
 <?php
 ob_start();
 
-// Session start should be the first thing.
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Prevents multiple inclusions
 include_once 'config.php';
 include_once 'functions.php';
 require_once 'EnvLoader.php';
 
-// Load environment variables
-EnvLoader::load(__DIR__ . '/.env');
+// FIX #18: Load environment variables only once per request using a constant guard
+if (!defined('ENV_LOADED')) {
+    EnvLoader::load(__DIR__ . '/.env');
+    define('ENV_LOADED', true);
+}
 
-// --- Fetch Customization Settings ---
 $store_name = htmlspecialchars(EnvLoader::get('STORE_NAME', 'ASIKO'));
 
-// --- FIX: Smart Logo Path Handling ---
 $raw_logo_path = EnvLoader::get('LOGO_PATH', 'ASIKO.png');
-// Ensure logo path is relative and clean
 if (strpos($raw_logo_path, 'uploads/logos/') !== false && strpos($raw_logo_path, 'Red/') === false) {
     $logo_path = 'Red/' . ltrim($raw_logo_path, '/');
 } else {
-    $logo_path = ltrim($raw_logo_path, '/'); // Remove leading slash for portability
+    $logo_path = ltrim($raw_logo_path, '/'); 
 }
 $logo_path = htmlspecialchars($logo_path);
+
+// FIX #17: Use filemtime instead of time() to allow browser caching of the logo
+$absolute_logo_path = __DIR__ . '/' . $logo_path;
+$logo_version = file_exists($absolute_logo_path) ? filemtime($absolute_logo_path) : time();
 
 $theme_color = htmlspecialchars(EnvLoader::get('THEME_COLOR', '#dbcb36')); 
 $background_color = htmlspecialchars(EnvLoader::get('BACKGROUND_COLOR', '#fefefe')); 
@@ -33,10 +35,8 @@ $text_color = htmlspecialchars(EnvLoader::get('TEXT_COLOR', '#1a1a1a'));
 $font_family = htmlspecialchars(EnvLoader::get('FONT_FAMILY', 'Inter'));
 $font_size = htmlspecialchars(EnvLoader::get('FONT_SIZE', '16'));
 
-// This call now works because functions.php is included above
 $theme_color_hover = darken_color($theme_color, 10); 
 
-// --- Cart Count Logic ---
 $cart_count = 0;
 if (isset($_SESSION['user_id'])) {
     try {
@@ -107,7 +107,7 @@ $asset_version = file_exists(__DIR__ . '/assets/css/custom.css') ? filemtime(__D
         <header class="luxury-header" id="header">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between h-20">
                 <a href="index.php" class="logo flex-shrink-0 flex items-center">
-                    <img src="<?= $logo_path ?>?v=<?= time() ?>" alt="<?= $store_name ?> Logo" class="h-12 w-auto object-contain">
+                    <img src="<?= $logo_path ?>?v=<?= $logo_version ?>" alt="<?= $store_name ?> Logo" class="h-12 w-auto object-contain">
                 </a>
 
                 <nav class="hidden md:flex items-center space-x-2">
@@ -164,7 +164,6 @@ $asset_version = file_exists(__DIR__ . '/assets/css/custom.css') ? filemtime(__D
         </div>
 
         <script>
-            // Mobile menu toggle logic
             const btn = document.getElementById('mobile-menu-button');
             const menu = document.getElementById('mobile-menu');
             const hamburgerIcon = document.getElementById('hamburger-icon');

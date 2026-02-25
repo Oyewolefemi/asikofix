@@ -11,7 +11,6 @@ if (!isset($_SESSION['pending_user_id'])) {
     exit;
 }
 
-// Retrieve and clear any error message from the process page
 $error = $_SESSION['flash_error'] ?? null;
 unset($_SESSION['flash_error']);
 
@@ -21,10 +20,10 @@ try {
     $userData = $stmt->fetch();
 
     if (!$userData || empty($userData['security_question'])) {
-        // No question found - clear session and force re-login/contact support
         session_destroy();
         include 'header.php';
-        printError("Security configuration missing. Please contact support.");
+        // FIX #14: Replaced the specific error with a generic one
+        printError("Invalid user ID or incorrect security answer.");
         include 'footer.php';
         exit;
     }
@@ -53,7 +52,7 @@ include 'header.php';
 
     <?php if ($error): ?>
         <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6 text-sm font-medium">
-            <?= htmlspecialchars($error) ?>
+            Invalid user ID or incorrect security answer.
         </div>
     <?php endif; ?>
 

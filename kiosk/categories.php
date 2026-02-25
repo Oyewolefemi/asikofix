@@ -37,7 +37,6 @@ function getCategoryImage($imagePath) {
     if (empty($imagePath)) return null;
     
     $filename = basename($imagePath);
-    // FIX: Changed /kios/ to /kiosk/
     $webPath = "/kiosk/Red/uploads/" . $filename;
     $serverPath = $_SERVER['DOCUMENT_ROOT'] . $webPath;
     
@@ -45,9 +44,8 @@ function getCategoryImage($imagePath) {
         return $webPath;
     }
     
-    // Fallback: try the path as stored in DB if the constructed path fails
-    // Also fix potential 'kiosk' typo in DB path
-    $dbPath = str_replace('/kiosk/', '/kios/', $imagePath);
+    // FIX applied here for Bug #8: Reverse str_replace arguments to fix the typo instead of causing it.
+    $dbPath = str_replace('/kios/', '/kiosk/', $imagePath);
     if (file_exists($_SERVER['DOCUMENT_ROOT'] . $dbPath)) {
         return $dbPath;
     }

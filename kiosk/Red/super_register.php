@@ -1,21 +1,20 @@
 <?php
 // dns/kiosk/Red/super_register.php
 
-// --- WARNING: NO SECURITY KEY ---
-// Anyone who accesses this page can become a Super Admin.
-// PLEASE DELETE THIS FILE AFTER YOU CREATE YOUR ACCOUNT.
+$allowed_ips = ['127.0.0.1', '::1']; // Add your current IP here if you need to use this file
+if (!in_array($_SERVER['REMOTE_ADDR'], $allowed_ips)) {
+    die("Access denied. Super Admin registration is locked for security. If you need to add an admin, update the IP whitelist in this file.");
+}
 
 session_start();
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 try {
-    // 1. Load Config and Functions (Adjust paths if necessary)
     if (file_exists(__DIR__ . '/../config.php')) {
         require_once __DIR__ . '/../config.php';
         require_once __DIR__ . '/../functions.php';
     } else {
-        // Fallback if file structure is slightly different
         die("System Error: Configuration file not found.");
     }
 } catch (Exception $e) {
@@ -32,20 +31,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($username) || empty($password)) {
         $error = "Username and Password are required.";
     } else {
-        // Check if username taken
         $stmt = $pdo->prepare("SELECT id FROM admins WHERE username = ?");
         $stmt->execute([$username]);
         if ($stmt->fetch()) {
             $error = "Username already taken.";
         } else {
-            // INSERT WITH ROLE = 'superadmin'
             $hash = secureHash($password);
-            
-            // Note: We force the role to 'superadmin' here
             $stmt = $pdo->prepare("INSERT INTO admins (username, password_hash, role) VALUES (?, ?, 'superadmin')");
             
             if ($stmt->execute([$username, $hash])) {
-                $success = "Super Admin created successfully! <a href='admin_auth.php' class='underline font-bold'>Login here</a>. <br><br><strong>⚠️ IMPORTANT: Delete this file (super_register.php) from your server now!</strong>";
+                $success = "Super Admin created successfully! <a href='admin_auth.php' class='underline font-bold'>Login here</a>. <br><br><strong>⚠️ IMPORTANT: Delete this file or remove your IP from the whitelist!</strong>";
             } else {
                 $error = "Database error. Could not register.";
             }

@@ -1,30 +1,31 @@
 <?php
-header('Content-Type: application/json');
+// weds/kiosk/get_delivery_fee.php
 
-$location = $_GET['location'] ?? '';
-
-// --- SIMULATED API CALL ---
-// Replace this function with your actual API call to a logistics provider.
 function getShippingFeeFromApi($destination) {
-    // This is a dummy implementation. In a real scenario, you would use cURL
-    // to call an external API endpoint like https://api.logistics.com/quote
-    // with the destination and other order details (weight, size, etc.).
+    // Normalizing input
+    $destination = trim(strtolower($destination));
     
+    // Dummy fee mapping
     $fees = [
-        'Island' => 2500,
-        'Mainland' => 2000,
-        'Inter-state (park)' => 4500,
-        'Inter-state (doorstep)' => 7500,
-        'Pick-up' => 0
+        'island' => 2500,
+        'mainland' => 2000,
+        'abuja' => 4500,
+        'abeokuta' => 4000,
+        'lagos' => 2000,
+        'pick-up' => 0
     ];
     
-    // Simulate a network delay to mimic a real API call
-    sleep(1); 
-    
-    return $fees[$destination] ?? 0;
+    return $fees[$destination] ?? 3000; // Default fallback fee of 3000
 }
 
-$fee = getShippingFeeFromApi($location);
-
-echo json_encode(['fee_amount' => $fee]);
+// Only echo JSON if this file is accessed directly via the browser/AJAX
+if (basename(__FILE__) == basename($_SERVER["SCRIPT_FILENAME"])) {
+    header('Content-Type: application/json');
+    $location = $_GET['location'] ?? '';
+    
+    // Simulate network delay for API dummy
+    sleep(1); 
+    
+    echo json_encode(['fee_amount' => getShippingFeeFromApi($location)]);
+}
 ?>
